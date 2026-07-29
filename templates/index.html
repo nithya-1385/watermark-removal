@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watermark Removal</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0c0c0f;--surface:#16161a;--border:#2a2a30;
+      --text:#e2e2e6;--muted:#7a7a85;
+      --accent:#6c5ce7;--accent-h:#7f71ed;
+      --green:#2ecc71;--red:#e74c3c;--radius:10px;
+    }
+    body{
+      font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      background:var(--bg);color:var(--text);
+      min-height:100vh;display:flex;flex-direction:column;align-items:center;
+    }
+    header{
+      width:100%;max-width:900px;padding:24px 32px;
+      display:flex;align-items:center;justify-content:space-between;
+      border-bottom:1px solid var(--border);
+    }
+    .logo{font-size:15px;font-weight:600;letter-spacing:.5px}
+    .logo span{color:var(--accent)}
+    .tag{font-size:11px;color:var(--muted);background:var(--surface);
+      padding:4px 10px;border-radius:20px;border:1px solid var(--border)}
+    main{width:100%;max-width:900px;padding:48px 32px;flex:1}
+    h1{font-size:28px;font-weight:700;margin-bottom:6px}
+    .subtitle{color:var(--muted);font-size:14px;margin-bottom:40px;line-height:1.5}
+    .dropzone{
+      border:2px dashed var(--border);border-radius:var(--radius);
+      padding:56px 24px;text-align:center;cursor:pointer;
+      transition:border-color .2s,background .2s;position:relative;
+    }
+    .dropzone:hover,.dropzone.dragover{
+      border-color:var(--accent);background:rgba(108,92,231,.04);
+    }
+    .dropzone input{display:none}
+    .dropzone-icon{font-size:36px;margin-bottom:12px;opacity:.5}
+    .dropzone-text{color:var(--muted);font-size:14px}
+    .dropzone-text strong{color:var(--accent-h)}
+    .file-info{margin-top:8px;font-size:12px;color:var(--muted)}
+    .preview-row{display:none;gap:24px;margin-top:32px}
+    .preview-row.visible{display:grid;grid-template-columns:1fr 1fr}
+    .preview-card{
+      background:var(--surface);border:1px solid var(--border);
+      border-radius:var(--radius);overflow:hidden;
+    }
+    .preview-card .label{
+      padding:10px 14px;font-size:12px;font-weight:600;
+      text-transform:uppercase;letter-spacing:.8px;color:var(--muted);
+      border-bottom:1px solid var(--border);
+    }
+    .preview-card .img-wrap{
+      padding:12px;display:flex;align-items:center;justify-content:center;
+      min-height:240px;background:#111114;
+    }
+    .preview-card img{max-width:100%;max-height:360px;border-radius:4px;object-fit:contain}
+    .actions{margin-top:24px;display:flex;gap:12px}
+    button{
+      font-family:inherit;font-size:14px;font-weight:600;
+      padding:12px 28px;border:none;border-radius:var(--radius);
+      cursor:pointer;transition:background .2s,opacity .2s;
+    }
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-primary:hover{background:var(--accent-h)}
+    .btn-primary:disabled{opacity:.4;cursor:not-allowed}
+    .btn-secondary{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+    .btn-secondary:hover{background:var(--border)}
+    .progress-wrap{display:none;margin-top:20px;flex-direction:column;gap:8px}
+    .progress-wrap.visible{display:flex}
+    .progress-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+    .progress-bar .fill{height:100%;width:0%;background:var(--accent);transition:width .4s ease}
+    .progress-text{font-size:13px;color:var(--muted)}
+    footer{
+      padding:20px 32px;font-size:12px;color:var(--muted);
+      text-align:center;border-top:1px solid var(--border);
+      width:100%;max-width:900px;
+    }
+    @media(max-width:600px){
+      .preview-row.visible{grid-template-columns:1fr}
+      main{padding:32px 16px}
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">WATERMARK <span>REMOVAL</span></div>
+  <div class="tag">Classical Attack • No GPU</div>
+</header>
+
+<main>
+  <h1>Remove invisible watermarks</h1>
+  <p class="subtitle">
+    Adaptive importance-guided noise + multi-scale JPEG Y-channel attack.<br>
+    No neural networks. No GPU. Pure signal processing.
+  </p>
+
+  <div class="dropzone" id="dropzone">
+    <div class="dropzone-icon">↑</div>
+    <div class="dropzone-text"><strong>Click to upload</strong> or drag and drop</div>
+    <div class="file-info">PNG, JPG up to 20 MB</div>
+    <input type="file" id="file-input" accept="image/*">
+  </div>
+
+  <div class="preview-row" id="preview-row">
+    <div class="preview-card">
+      <div class="label">Input</div>
+      <div class="img-wrap"><img id="img-original"></div>
+    </div>
+    <div class="preview-card">
+      <div class="label">Processed</div>
+      <div class="img-wrap"><img id="img-processed"></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" id="btn-process" disabled>Process image</button>
+    <button class="btn-secondary" id="btn-download" style="display:none">Download result</button>
+  </div>
+
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-bar"><div class="fill" id="progress-fill"></div></div>
+    <div class="progress-text" id="progress-text">Uploading…</div>
+  </div>
+</main>
+
+<footer>PES University, Bengaluru — Research project</footer>
+
+<script>
+const dropzone=document.getElementById('dropzone'),
+  fileInput=document.getElementById('file-input'),
+  btnProcess=document.getElementById('btn-process'),
+  btnDownload=document.getElementById('btn-download'),
+  previewRow=document.getElementById('preview-row'),
+  imgOriginal=document.getElementById('img-original'),
+  imgProcessed=document.getElementById('img-processed'),
+  progressWrap=document.getElementById('progress-wrap'),
+  progressFill=document.getElementById('progress-fill'),
+  progressText=document.getElementById('progress-text');
+
+let selectedFile=null,downloadUrl=null;
+
+dropzone.addEventListener('click',()=>fileInput.click());
+dropzone.addEventListener('dragover',e=>{e.preventDefault();dropzone.classList.add('dragover')});
+dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop',e=>{
+  e.preventDefault();dropzone.classList.remove('dragover');
+  if(e.dataTransfer.files.length)handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change',()=>{
+  if(fileInput.files.length)handleFile(fileInput.files[0]);
+});
+
+function handleFile(file){
+  if(!file.type.startsWith('image/'))return alert('Please upload an image.');
+  selectedFile=file;
+  imgOriginal.src=URL.createObjectURL(file);
+  imgProcessed.src='';imgProcessed.style.display='none';
+  previewRow.classList.add('visible');
+  btnProcess.disabled=false;
+  btnDownload.style.display='none';
+  progressWrap.classList.remove('visible');
+}
+
+btnProcess.addEventListener('click',async()=>{
+  if(!selectedFile)return;
+  btnProcess.disabled=true;
+  progressWrap.classList.add('visible');
+  progressFill.style.width='20%';
+  progressText.textContent='Uploading image…';
+
+  const form=new FormData();
+  form.append('file',selectedFile);
+
+  try{
+    progressFill.style.width='40%';
+    progressText.textContent='Processing… this may take 10-30 seconds';
+
+    const res=await fetch('/api/process',{method:'POST',body:form});
+    if(!res.ok)throw new Error(await res.text());
+
+    progressFill.style.width='90%';
+    progressText.textContent='Downloading result…';
+
+    const data=await res.json();
+    downloadUrl=data.download_url;
+    imgProcessed.src=downloadUrl;
+    imgProcessed.style.display='';
+    btnDownload.style.display='';
+    progressFill.style.width='100%';
+    progressText.textContent='Done ✓';
+  }catch(err){
+    progressText.textContent='Error: '+err.message;
+    progressFill.style.width='0%';
+  }finally{
+    btnProcess.disabled=false;
+  }
+});
+
+btnDownload.addEventListener('click',()=>{
+  if(!downloadUrl)return;
+  const a=document.createElement('a');
+  a.href=downloadUrl;a.download='cleaned.png';a.click();
+});
+</script>
+
+</body>
+</html>
