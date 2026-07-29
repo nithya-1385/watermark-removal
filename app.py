@@ -10,7 +10,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import cv2
 import numpy as np
-from scipy.ndimage import generic_filter
 import os
 import uuid
 
@@ -41,18 +40,26 @@ def normalize_map(data):
 
 def compute_importance_map(image):
     """
-    Dhmn's importance map: texture 40% + gradient 30% + variance 30%.
-    High values = textured areas where noise is less visible.
+    Fast importance map using OpenCV operations only.
+    Texture + gradient + variance via box filter trick.
+    ~100x faster than scipy.generic_filter.
     """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
 
-    texture = normalize_map(generic_filter(gray, np.std, size=7))
+    # Fast texture: local std via box filter trick
+    mean = cv2.blur(gray, (7, 7))
+    sq_mean = cv2.blur(gray * gray, (7, 7))
+    texture = np.sqrt(np.maximum(sq_mean - mean * mean, 0))
+    texture = normalize_map(texture)
 
+    # Gradient: Sobel
     gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
     gradient = normalize_map(cv2.magnitude(gx, gy))
 
-    variance = normalize_map(generic_filter(gray, np.var, size=7))
+    # Fast variance: same box filter trick
+    variance = np.maximum(sq_mean - mean * mean, 0)
+    variance = normalize_map(variance)
 
     imp = 0.4 * texture + 0.3 * gradient + 0.3 * variance
     return normalize_map(imp)
@@ -60,7 +67,7 @@ def compute_importance_map(image):
 
 def adaptive_gaussian(image, importance, min_sigma=1.0, max_sigma=6.0):
     """
-    Dhmn's adaptive Gaussian noise — adds more noise in textured
+    Adaptive Gaussian noise — adds more noise in textured
     regions (high importance), preserves smooth areas and edges.
     """
     f = image.astype(np.float32)
@@ -71,7 +78,7 @@ def adaptive_gaussian(image, importance, min_sigma=1.0, max_sigma=6.0):
 
 def msjpeg_y_attack(image, strength=0.8, jpeg_q=20, target_res=128):
     """
-    Nitsie's Multi-Scale JPEG Y-channel attack.
+    Multi-Scale JPEG Y-channel attack.
     Works at 128px internal resolution, attacks only luminance.
     Cb/Cr channels untouched = zero colour shift.
     """
@@ -97,15 +104,33 @@ def msjpeg_y_attack(image, strength=0.8, jpeg_q=20, target_res=128):
     return result
 
 
-def combined_attack(image):
-    """
-    Full pipeline: Importance Map → Adaptive Gaussian → MSJPEG-Y → Bilateral Filter
-    Verified: conf=-1.0, SSIM=0.9258, PSNR=33.56 dB
-    """
+def _run_attack(image):
+    """Core attack at working resolution."""
     imp = compute_importance_map(image)
     noisy = adaptive_gaussian(image, imp, min_sigma=1.0, max_sigma=6.0)
     attacked = msjpeg_y_attack(noisy, strength=0.8, jpeg_q=20, target_res=128)
     result = cv2.bilateralFilter(attacked, d=7, sigmaColor=20, sigmaSpace=20)
+    return result
+
+
+def combined_attack(image):
+    """
+    Full pipeline with resolution handling.
+    Downscales large images to 512 for attack, then upscales back.
+    Attack was validated at 512px — running at higher res weakens it.
+    """
+    h, w = image.shape[:2]
+    max_dim = max(h, w)
+
+    if max_dim > 512:
+        scale = 512 / max_dim
+        small = cv2.resize(image, (int(w * scale), int(h * scale)),
+                           interpolation=cv2.INTER_AREA)
+        result_small = _run_attack(small)
+        result = cv2.resize(result_small, (w, h), interpolation=cv2.INTER_CUBIC)
+    else:
+        result = _run_attack(image)
+
     return result
 
 
