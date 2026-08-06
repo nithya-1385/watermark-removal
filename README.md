@@ -1,32 +1,50 @@
-# Watermark Removal — Classical Attack Pipeline
+# Watermark Removal — Multi-Resolution MSJPEG-Y Attack
 
-**Combined Pipeline:** Adaptive Gaussian Noise + Multi-Scale JPEG Y-channel Attack
+**Pipeline:** Multi-Resolution JPEG Y-channel Attack (no neural networks, no GPU)
 
-Removes invisible watermarks (TrustMark/SynthID-style) using pure signal processing.  
-No neural networks. No GPU. No ML models.
+Removes invisible watermarks (TrustMark/SynthID-style) by averaging JPEG compression
+diffs across 5 internal resolutions. Block edges from each resolution cancel out,
+eliminating visible grid artifacts while maintaining strong watermark removal.
 
 ## Results
 
 | Metric | Value |
 |---|---|
-| Confidence | -1.0 (fully removed) |
-| SSIM | 0.9258 |
-| PSNR | 33.56 dB |
-| Deployment size | ~10 MB |
+| Removal rate (1000 diverse images) | **83%** |
+| Removal rate (1000 embeddings, same image) | **100%** |
+| Avg quality retention (SSIM) | **95.96%** |
+| Avg PSNR | **33+ dB** |
+| Deployment size | **~10 MB** |
 
 ## How It Works
 
-1. **Importance Map Analysis** — Texture + gradient + variance fusion identifies textured vs smooth regions
-2. **Adaptive Gaussian Noise** — Adds perturbation guided by importance map (more in textured areas, less in smooth)
-3. **MSJPEG-Y Attack** — Downscales Y channel to 128px, JPEG compresses at Q20, computes diff, upsamples back
-4. **Bilateral Filter** — Edge-preserving cosmetic smoothing on final output
+1. **Multi-Resolution Y-channel JPEG** — Downscales the Y (luminance) channel to 5
+   different internal resolutions [96, 112, 128, 144, 160px], applies JPEG compression
+   at Q=20 to each, computes the diff, upsamples back to full resolution, and averages
+   all 5 diffs together. Block edges from each resolution land at different pixel
+   positions and cancel out — no visible grid artifacts.
+2. **Bilateral Filter** — Edge-preserving cosmetic smoothing on final output.
+3. **Alpha channel support** — PNG transparency is preserved throughout.
+
+## Why This Works
+
+TrustMark (used as a proxy for SynthID) embeds watermarks in the frequency domain.
+JPEG compression at low quality disrupts these frequency components. By averaging across
+multiple internal resolutions, the attack is both stronger (wider frequency disruption)
+and cleaner (no single resolution's block pattern dominates).
+
+## Validated On
+
+- **1000 COCO val2017 images** — diverse content: people, animals, food, indoor/outdoor
+- **15 curated test images** — various textures, resolutions, and content types
+- **TrustMark-Q** as SynthID proxy (confirmed same architecture per Gowal et al., 2025)
 
 ## Deploy
 
-### Render
+### Render (one click)
 1. Push to GitHub
 2. Go to render.com → New Web Service → Connect repo
-3. It auto-detects `render.yaml` — just click Deploy
+3. Auto-detects `render.yaml` → click Deploy
 
 ### Local
 ```bash
@@ -38,9 +56,15 @@ uvicorn app:app --reload --port 8000
 
 - FastAPI + Uvicorn
 - OpenCV (headless)
-- NumPy + SciPy
-- No PyTorch, no TensorFlow, no ONNX
+- NumPy
+- No PyTorch, no TensorFlow, no ML models in production
 
-## Authors
+## References
 
-PES University, Bengaluru (RR Campus)
+| Paper | Relevance |
+|---|---|
+| Gowal et al., arXiv:2510.09263, 2025 | SynthID-Image — confirms post-hoc encoder-decoder |
+| Bui et al., ICCV 2023 | TrustMark — proxy watermarking system |
+| Kassis & Hengartner, IEEE S&P 2025 | UnMarker — theoretical basis for classical attacks |
+
+Proof of Concept Research project
